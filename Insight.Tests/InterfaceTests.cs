@@ -286,10 +286,8 @@ namespace Insight.Tests
 		[Test]
 		public void TestInterfaceMultithreaded()
 		{
-#if !NET35
 			// this only works in 4.0 and later
 			Parallel.For(0, 100, _ => TryInterfaceCall(100));
-#endif
 		}
 
 		public void TryInterfaceCall(int count)
@@ -560,6 +558,12 @@ namespace Insight.Tests
 			[Recordset(0, typeof(InfiniteBeerList))]
 			[Recordset(1, typeof(InfiniteBeerList), IsChild = true, Id="ID")]
 			InfiniteBeerList GetSingleBeerWithChildrenWithIDOverride();
+
+			[Sql("SELECT ID=1; SELECT ParentID=1, ID=2 UNION SELECT ParentID=1, ID=3; SELECT ParentID=2, ID=4")]
+			[Recordset(0, typeof(InfiniteBeerList))]
+			[Recordset(1, typeof(InfiniteBeerList), IsChild = true, Id = "ID")]
+			[Recordset(2, typeof(InfiniteBeerList), IsChild = true, Id = "ID", Parents="List")]
+			InfiniteBeerList GetMultiLevelChildren();			
 		}
 
 		[Test]
@@ -745,6 +749,26 @@ namespace Insight.Tests
 			Assert.AreEqual(1, beer.ID);
 			Assert.AreEqual(0, beer.List.Count);
 		}
+		
+		[Test]
+		public void CanGetMultiLevelChildren()
+		{
+			var i = Connection().As<IHaveStructure2>();
+			var result = i.GetMultiLevelChildren();
+
+			var beer = result;
+			Assert.IsNotNull(beer);
+			Assert.AreEqual(1, beer.ID);
+			Assert.AreEqual(2, beer.List.Count);
+			Assert.AreEqual(2, beer.List[0].ID);
+			Assert.AreEqual(3, beer.List[1].ID);
+
+			var beer2 = beer.List[0];
+			Assert.AreEqual(2, beer2.ID);
+			Assert.AreEqual(1, beer2.List.Count);
+			Assert.AreEqual(4, beer2.List[0].ID);
+		}
+
 		#endregion
 
 		#region Inheritance Tests
@@ -873,7 +897,6 @@ namespace Insight.Tests
 	#endregion
 
 	#region Multi-Threaded Interface Tests
-#if !NO_DBASYNC
 	interface IMultiThreaded
 	{
 		[Sql("SELECT ParentX=@p")]
@@ -908,7 +931,6 @@ namespace Insight.Tests
 			Task.WaitAll(tasks.ToArray());
 		}
 	}
-#endif
 	#endregion
 
 	#region Abstract Class Implementation Tests
@@ -1139,6 +1161,18 @@ namespace Insight.Tests
                 Assert.AreEqual(1, i);
             }
         }
+
+		[Test]
+        public void InterfacesCanUseExternalTransactions_Issue370()
+        {
+			using (var c = Connection().OpenConnection())
+			using (var sqlTransaction = c.BeginTransaction())
+            {
+                c.UsingTransaction(sqlTransaction).As<I1>().Do();
+                int i = c.UsingTransaction(sqlTransaction).As<I2>().Do();
+                Assert.AreEqual(1, i);
+            }
+        }
     }
     #endregion  
 
@@ -1159,5 +1193,56 @@ namespace Insight.Tests
             Assert.AreEqual(5, p);
         }
     }
+	#endregion
+
+	#region Multi-Level Child Support
+	[TestFixture]
+	public class TestMultiLevelChildren : BaseTest
+	{
+		public class Root
+		{
+			public int ID;
+			public List<Level2> List;
+		}
+
+		public class Level2
+		{
+			public int ID;
+			public List<Level3> List;
+		}
+
+		public class Level3
+		{
+			public int ID;
+		}
+
+		internal interface IHaveGrandchildren
+		{
+			[Sql("SELECT ID=1; SELECT ParentID=1, ID=2 UNION SELECT ParentID=1, ID=3; SELECT ParentID=2, ID=4")]
+			[Recordset(0, typeof(Root))]
+			[Recordset(1, typeof(Level2), IsChild = true, Id = "ID")]
+			[Recordset(2, typeof(Level3), IsChild = true, Id = "ID", Parents="List")]
+			Root GetMultiLevelChildren();			
+		}
+		
+		[Test]
+		public void CanGetMultiLevelChildren()
+		{
+			var i = Connection().As<IHaveGrandchildren>();
+			var result = i.GetMultiLevelChildren();
+
+			var root = result;
+			Assert.IsNotNull(root);
+			Assert.AreEqual(1, root.ID);
+			Assert.AreEqual(2, root.List.Count);
+			Assert.AreEqual(2, root.List[0].ID);
+			Assert.AreEqual(3, root.List[1].ID);
+
+			var level2 = root.List[0];
+			Assert.AreEqual(2, level2.ID);
+			Assert.AreEqual(1, level2.List.Count);
+			Assert.AreEqual(4, level2.List[0].ID);
+		}
+	}
 	#endregion
 }

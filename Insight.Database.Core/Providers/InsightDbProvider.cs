@@ -29,7 +29,7 @@ namespace Insight.Database.Providers
 		/// <summary>
 		/// Regex to detect parameters in sql text.
 		/// </summary>
-		private static Regex _parameterRegex = new Regex("[?@:]([a-zA-Z0-9_]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+		private static Regex _parameterRegex = new Regex("[?@:]([a-zA-Z0-9_]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
 		/// <summary>
 		/// The default provider to use if we don't understand a given type.
@@ -252,6 +252,14 @@ namespace Insight.Database.Providers
             if (HasPositionalSqlTextParameters)
                 command.CommandText = _parameterRegex.Replace(command.CommandText, "?");
         }
+
+		/// <summary>
+		/// Called before reading output parameters from the command.
+		/// </summary>
+		/// <param name="command">The command to fix up.</param>
+		public virtual void FixupOutputParameters(IDbCommand command)
+		{
+		}
 
 		/// <summary>
 		/// When building the parameter template, this allows the provider to fix properties.

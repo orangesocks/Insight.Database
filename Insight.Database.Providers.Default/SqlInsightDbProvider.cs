@@ -26,7 +26,12 @@ namespace Insight.Database
 		/// <summary>
 		/// The prefix used on parameter names.
 		/// </summary>
-		private static Regex _parameterPrefixRegex = new Regex("^[?@:]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+		private static Regex _parameterPrefixRegex = new Regex("^[?@:]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+		/// <summary>
+		/// Cache for Table-Valued Parameter type names.
+		/// </summary>
+		private static ConcurrentDictionary<Tuple<string, string, string, Type>, string> _tvpTypeNames = new ConcurrentDictionary<Tuple<string, string, string, Type>, string>();
 
 		/// <summary>
 		/// Cache for Table-Valued Parameter schemas.
@@ -203,12 +208,17 @@ namespace Insight.Database
 				return;
 			}
 
-			// allow the provider to make sure the table parameter is set up properly
-			string tableTypeName = GetTableParameterTypeName(command, parameter, listType);
-
 			// see if we already have a reader for the given type and table type name
 			// we can't use the schema cache because we don't have a schema yet
 			var key = Tuple.Create<string, string, string, Type>(command.Connection.ConnectionString, command.CommandText, parameter.ParameterName, listType);
+
+			// infer the name of the structured table type for the parameter
+			SqlParameter sqlParameter = (SqlParameter)parameter;
+			sqlParameter.SqlDbType = SqlDbType.Structured;
+			sqlParameter.TypeName = _tvpTypeNames.GetOrAdd(
+				key,
+				k => GetTableParameterTypeName(command, parameter, listType)
+			);
 
 			ObjectReader objectReader = (ObjectReader)_tvpReaders.GetOrAdd(
 				key,
@@ -287,7 +297,6 @@ namespace Insight.Database
 			}
 		}
 
-#if !NO_DBASYNC
 		/// <summary>
 		/// Asynchronously bulk copies a set of objects to the server.
 		/// </summary>
@@ -311,13 +320,12 @@ namespace Insight.Database
 #endif
 			}
 		}
-#endif
 
-				/// <summary>
-				/// Determines if a database exception is a transient exception and if the operation could be retried.
-				/// </summary>
-				/// <param name="exception">The exception to test.</param>
-				/// <returns>True if the exception is transient.</returns>
+		/// <summary>
+		/// Determines if a database exception is a transient exception and if the operation could be retried.
+		/// </summary>
+		/// <param name="exception">The exception to test.</param>
+		/// <returns>True if the exception is transient.</returns>
 		public override bool IsTransientException(Exception exception)
 		{
 			// we are only going to try to handle sql server exceptions
@@ -438,13 +446,10 @@ namespace Insight.Database
 			if (listType == null) throw new ArgumentNullException("listType");
 
 			SqlParameter p = parameter as SqlParameter;
-
 			if (String.IsNullOrEmpty(p.TypeName))
 			{
-				p.SqlDbType = SqlDbType.Structured;
-
 				var tableTypes = new String[] { p.ParameterName, listType.Name, listType.Name + "Table" };
-				p.TypeName = tableTypes.Where(t => command.Connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.table_types WHERE NAME = @name", new { name = t }) > 0).First();
+				return tableTypes.Where(t => command.Connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.table_types WHERE NAME = @name", new { name = t }, transaction: command.Transaction) > 0).First();
 			}
 
 			return p.TypeName;
@@ -500,9 +505,7 @@ namespace Insight.Database
 			{
 				bulk = new SqlBulkCopy((SqlConnection)connection, sqlOptions, (SqlTransaction)transaction);
 				bulk.DestinationTableName = tableName;
-#if !NO_DBASYNC
 				bulk.EnableStreaming = true;
-#endif
 
 				// map the columns by name, in case we skipped a readonly column
 				for (int i = 0; i < reader.FieldCount; i++)

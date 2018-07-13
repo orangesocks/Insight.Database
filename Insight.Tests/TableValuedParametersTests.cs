@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Data;
+using System.Linq;
 using Insight.Database;
 using NUnit.Framework;
 
@@ -41,6 +42,19 @@ namespace Insight.Tests
 			var roundtrippedValue = Connection().ExecuteScalarSql<string>("select top 1 String from @values", new { values = new[] { new InsightTestDataString() { String = new MyCustomClass { Value = "classes are better" } } } });
 
 			Assert.That(roundtrippedValue, Is.EqualTo("classes are better"));
+		}
+
+		[Test]
+		public void Given_a_table_type_with_a_property_that_is_a_class_which_requires_serialisation_When_using_the_type_in_an_sql_statement_in_a_transaction_Then_it_does_not_explode()
+		{
+			DbSerializationRule.Serialize<MyCustomClass>(new MyCustomSerialiser<MyCustomClass>());
+
+			using (var connection = ConnectionWithTransaction())
+			{
+				var roundtrippedValue = connection.ExecuteScalarSql<string>("select top 1 String from @values", new {values = new[] {new InsightTestDataString() {String = new MyCustomClass {Value = "classes are better"}}}});
+
+				Assert.That(roundtrippedValue, Is.EqualTo("classes are better"));
+			}
 		}
 	}
 
@@ -116,4 +130,44 @@ namespace Insight.Tests
 		}
 	}
 
+	#region Issue 354 Tests
+	[TestFixture]
+	public class Issue354Tests : BaseTest
+	{
+		[SetUp]
+		public void SetUp()
+		{
+			Connection().ExecuteSql("create type SimpleIntTable as table (Value int primary key)");
+		}
+
+		[TearDown]
+		public void TearDown()
+		{
+			Connection().ExecuteSql("drop type SimpleIntTable");
+		}
+
+		[Test]
+		public void TVPsShouldBeCached()
+		{
+			var sql = "select count(*) from @values";
+			var values = Enumerable.Range(1, 4).Select(v => new SimpleInt(v)).ToArray();
+
+			void RunQuery() => Connection().SingleSql<int>(sql, new { values });
+
+			//Run the query twice
+			RunQuery();
+			RunQuery();
+		}
+
+		public class SimpleInt
+		{
+			public int Value { get; }
+
+			public SimpleInt(int value)
+			{
+				Value = value;
+			}
+		}
+	}
+	#endregion
 }

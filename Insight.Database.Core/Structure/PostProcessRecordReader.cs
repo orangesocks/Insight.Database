@@ -45,6 +45,17 @@ namespace Insight.Database
 		}
 
 		/// <inheritdoc/>
+		public override IRecordReader<TGuardian> GetGuardianReader<TGuardian>()
+		{
+			return new PostProcessRecordReader<TGuardian>(OneToOne<TGuardian, T>.Records,
+				(IDataReader reader, TGuardian guardian) =>
+				{
+					_postRead(reader, guardian.Object);
+					return guardian;
+				});
+		}
+
+		/// <inheritdoc/>
 		public override Func<IDataReader, T> GetRecordReader(IDataReader reader)
 		{
 			var baseReader = _baseReader.GetRecordReader(reader);
