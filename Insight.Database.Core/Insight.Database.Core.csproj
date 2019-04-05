@@ -8,7 +8,13 @@
   
   <PropertyGroup>
     <ProjectType>LibraryPackage</ProjectType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(INSIGHT_NETCOREONLY)' == ''">
     <TargetFrameworks>netstandard2.0;netstandard1.5;net451;net45</TargetFrameworks>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(INSIGHT_NETCOREONLY)' != ''">
+    <TargetFrameworks>netstandard2.0;netstandard1.5</TargetFrameworks>
   </PropertyGroup>
 
   <Import Project="..\SharedConfiguration.csproj" />
@@ -166,5 +172,9 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>SingleReader.tt</DependentUpon>
     </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <DotNetCliToolReference Include="T5.TextTransform.Tool" Version="1.1.0-*" />
   </ItemGroup>
 </Project>

@@ -103,8 +103,10 @@ namespace Insight.Database.CodeGenerator
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		private static DynamicMethod CreateClassDeserializerDynamicMethod(Type type, IDataReader reader, IRecordStructure structure, int startColumn, int columnCount, bool createNewObject, bool isRootObject, bool allowBindChild)
 		{
-			// if there are no columns detected for the class, then the deserializer is null
-			if (columnCount == 0 && !isRootObject)
+			// if there are no columns detected for the class, then don't deserialize it
+			// exception: a parentandchild object in the middle of a child hierarchy
+			var genericType = type.GetTypeInfo().IsGenericType ? type.GetGenericTypeDefinition() : null;
+			if (columnCount == 0 && !isRootObject && genericType != typeof(ParentAndChild<,>))
 				return null;
 
 			var mappings = MapColumns(type, reader, startColumn, columnCount, structure, allowBindChild && isRootObject);
@@ -138,12 +140,14 @@ namespace Insight.Database.CodeGenerator
             // read all of the values into local variables
             /////////////////////////////////////////////////////////////////////
 			il.BeginExceptionBlock();
+			var hasAtLeastOneMapping = false;
             var localValues = new LocalBuilder[mappings.Count];
             for (int index = 0; index < columnCount; index++)
             {
                 var mapping = mappings[index];
                 if (mapping == null)
                     continue;
+				hasAtLeastOneMapping = true;
 
                 var member = mapping.Member;
 
@@ -197,7 +201,7 @@ namespace Insight.Database.CodeGenerator
             /////////////////////////////////////////////////////////////////////
             // if this was a subobject and all of the values are null, then return the default for the object
             /////////////////////////////////////////////////////////////////////
-            if (startColumn > 0)
+            if (hasAtLeastOneMapping && startColumn > 0)
             {
                 var afterNullExit = il.DefineLabel();
                 il.Emit(OpCodes.Ldloc, localIsNotAllDbNull);
@@ -419,18 +423,17 @@ namespace Insight.Database.CodeGenerator
 				for (int parent = 0; parent < i; parent++)
 				{
 					// find the set method on the current parent
-					setMethod = GetFirstMatchingMethod(ClassPropInfo.GetMembersForType(subTypes[parent]).Where(m => m.CanSetMember), subTypes[i]);
-
-					// make sure that at a given level, we only use the method once
-					var tuple = Tuple.Create(parent, setMethod);
-					if (usedMethods.Contains(tuple))
-						continue;
-					else
-						usedMethods.Add(tuple);
+					setMethod = GetMatchingMethods(ClassPropInfo.GetMembersForType(subTypes[parent]).Where(m => m.CanSetMember), subTypes[i])
+									.Where(m => !usedMethods.Contains(Tuple.Create(parent, m)))
+									.OrderBy(m => m.Name)
+									.FirstOrDefault();
 
 					// if we didn't find a matching set method, then continue on to the next type in the graph
 					if (setMethod == null)
 						continue;
+
+					// make sure that at a given level, we only use the method once
+					usedMethods.Add(Tuple.Create(parent, setMethod));
 
 					// if the parent is not the root object, we have to drill down to the parent, then set the value
 					// the root object is already on the stack, so emit a get method to get the object to drill down into
@@ -481,9 +484,13 @@ namespace Insight.Database.CodeGenerator
 		/// <returns>The first method that has the given type.</returns>
 		private static ClassPropInfo GetFirstMatchingMethod(IEnumerable<ClassPropInfo> properties, Type type)
 		{
+			return GetMatchingMethods(properties, type).FirstOrDefault();
+		}
+
+		private static IEnumerable<ClassPropInfo> GetMatchingMethods(IEnumerable<ClassPropInfo> properties, Type type)
+		{
 			// NOTE: for a subtype match, we can't bind to object, it's not specific enough, it also prevents Guardian<T> from working
-			return properties.FirstOrDefault(s => type == s.MemberType) ??
-				properties.Where(p => p.MemberType != typeof(object)).FirstOrDefault(s => type.IsSubclassOf(s.MemberType));
+			return properties.Where(s => type == s.MemberType || (s.MemberType != typeof(object) && type.IsSubclassOf(s.MemberType)));
 		}
 		#endregion
 

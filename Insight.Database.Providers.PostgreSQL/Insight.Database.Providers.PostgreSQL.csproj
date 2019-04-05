@@ -9,14 +9,24 @@
 
   <PropertyGroup>
     <ProjectType>LibraryPackage</ProjectType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(INSIGHT_NETCOREONLY)' == ''">
     <TargetFrameworks>netstandard2.0;netstandard1.5;net451;net45</TargetFrameworks>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(INSIGHT_NETCOREONLY)' != ''">
+    <TargetFrameworks>netstandard2.0;netstandard1.5</TargetFrameworks>
   </PropertyGroup>
 
   <Import Project="..\SharedConfiguration.csproj" />
 
-  <ItemGroup>
+  <ItemGroup Condition="$(TargetFramework) == 'netstandard1.5'">
     <PackageReference Include="Npgsql" Version="3.2.2" />
   </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework) != 'netstandard1.5'">
+    <PackageReference Include="Npgsql" Version="4.0.3" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Insight.Database.Core\Insight.Database.Core.csproj" />
   </ItemGroup>

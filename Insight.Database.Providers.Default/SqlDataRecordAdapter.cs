@@ -35,7 +35,7 @@ namespace Insight.Database.Providers.Default
 			{ typeof(string), SqlDbType.NVarChar },
 			{ typeof(char), SqlDbType.NChar },
 			{ typeof(Guid), SqlDbType.UniqueIdentifier },
-			{ typeof(DateTime), SqlDbType.DateTime },
+			{ typeof(DateTime), SqlDbType.DateTime2 },
 			{ typeof(DateTimeOffset), SqlDbType.DateTimeOffset },
 			{ typeof(TimeSpan), SqlDbType.Time },
 			{ typeof(byte[]), SqlDbType.VarBinary },
@@ -57,7 +57,7 @@ namespace Insight.Database.Providers.Default
 
 			_metadata = objectReader.Columns.Select(c => new SqlMetaData(
 				c.Name,
-				GetSqlDbType(c.DataType),
+				GetSqlDbType(c.DataType, c.DataTypeName),
 				(c.ColumnSize == 0x7fffffff) ? SqlMetaData.Max : (c.ColumnSize ?? 0),
 				Convert.ToByte((c.NumericPrecision == 0xff) ? 0 : c.NumericPrecision ?? 0),
 				Convert.ToByte((c.NumericScale == 0xff) ? 0 : c.NumericScale ?? 0),
@@ -102,10 +102,21 @@ namespace Insight.Database.Providers.Default
 		}
 
 		/// <inheritdoc/>
-		private static SqlDbType GetSqlDbType(Type type)
+		private static SqlDbType GetSqlDbType(Type type, string dataTypeName)
 		{
-			type = Nullable.GetUnderlyingType(type) ?? type;
+			if (!String.IsNullOrEmpty(dataTypeName))
+			{
+				switch (dataTypeName.ToLowerInvariant())
+				{
+					case "datetime":
+						return SqlDbType.DateTime;
 
+					case "datetime2":
+						return SqlDbType.DateTime2;
+				}
+			}
+
+			type = Nullable.GetUnderlyingType(type) ?? type;
 			return _typeToDbTypeMap[type];
 		}
 	}

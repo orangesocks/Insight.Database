@@ -921,15 +921,17 @@ namespace Insight.Tests
 		[Test]
 		public void DateFieldsShouldConvertProperly()
 		{
-			// send datetime and datetime? to sql
-			Connection().QuerySql<DateTime>("SELECT @date", new { date = DateTime.MinValue });
-			Connection().QuerySql<DateTime>("SELECT @date", new { date = (DateTime?)DateTime.MinValue });
+			var expected = DateTime.Now;
 
-			Connection().Query<DateTime>("TestDateTime2", new { date = DateTime.MinValue });
-			var list = Connection().Query<DateTime>("TestDateTime2", new { date = (DateTime?)DateTime.MinValue });
+			// send datetime and datetime? to sql
+			Connection().QuerySql<DateTime>("SELECT @date", new { date = expected });
+			Connection().QuerySql<DateTime>("SELECT @date", new { date = (DateTime?)expected });
+
+			Connection().Query<DateTime>("TestDateTime2", new { date = expected });
+			var list = Connection().Query<DateTime>("TestDateTime2", new { date = (DateTime?)expected });
 
 			var result = list.First();
-			Assert.AreEqual(DateTime.MinValue, result);
+			Assert.AreEqual(expected, result);
 		}
 
 		[Test]
@@ -946,6 +948,63 @@ namespace Insight.Tests
 			DateTime d = DateTime.MinValue;
 			var results = Connection().Query<DateTime>("TestDateTime2", new { date = d }).First();
 			Assert.AreEqual(d, results);
+		}
+
+		public class DateTimeModel { public DateTime MyDatetime { get; set; } }
+		public interface IDateTimeRepository
+		{ 
+			List<DateTime> InsertDateTimeList(IList<DateTimeModel> dateTimeTestList);
+			List<DateTime> InsertDateTime2List(IList<DateTimeModel> dateTime2TestList);
+		}
+
+		[Test]
+		public void DatetimeFieldsShouldConvertInTVP()
+		{
+			var c = Connection();
+			try
+			{
+				c.ExecuteSql(@"create type [datetimeList] as table( [myDatetime] [datetime] not null )");
+				c.ExecuteSql(@"create procedure [InsertDateTimeList] @datetimeList as datetimeList readonly as select myDatetime from @datetimeList");				
+
+				var expected = new DateTime(2018, 11, 15, 14, 53, 48, 493);
+
+				var model = new DateTimeModel { MyDatetime = expected };
+				var list = new List<DateTimeModel> { model, model };
+				var repo = c.As<IDateTimeRepository>();
+				var results = repo.InsertDateTimeList(list);
+
+				Assert.AreEqual(expected, results[0]);
+			}
+			finally
+			{
+				c.ExecuteSql("drop procedure [InsertDateTimeList]");
+				c.ExecuteSql("drop type [datetimeList]");
+			}
+		}
+		
+		[Test]
+		public void Datetime2FieldsShouldConvertInTVP()
+		{
+			var c = Connection();
+			try
+			{
+				c.ExecuteSql(@"create type [datetime2List] as table( [myDatetime] [datetime2](7) not null )");
+				c.ExecuteSql(@"create procedure [InsertDateTime2List] @datetime2List as datetime2List readonly as select myDatetime from @datetime2List");				
+
+				var expected = DateTime.UtcNow;
+
+				var model = new DateTimeModel { MyDatetime = expected };
+				var list = new List<DateTimeModel> { model, model };
+				var repo = c.As<IDateTimeRepository>();
+				var results = repo.InsertDateTime2List(list);
+
+				Assert.AreEqual(expected, results[0]);
+			}
+			finally
+			{
+				c.ExecuteSql("drop procedure [InsertDateTime2List]");
+				c.ExecuteSql("drop type [datetime2List]");
+			}
 		}
 #endregion
 

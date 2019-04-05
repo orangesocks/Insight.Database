@@ -95,10 +95,10 @@ namespace Insight.Database.Providers.PostgreSQL
         {
             if (command == null) throw new ArgumentNullException("command");
 
-#if NETSTANDARD1_5 || NETSTANDARD2_0
+#if NETSTANDARD1_5
             Insight.Database.Providers.PostgreSQL.Compatibility.NpgsqlCommandBuilder.DeriveParameters(command as NpgsqlCommand);
 #else
-			NpgsqlCommandBuilder.DeriveParameters(command as NpgsqlCommand);
+            NpgsqlCommandBuilder.DeriveParameters(command as NpgsqlCommand);
 #endif
 
             // remove the @ from any parameters
@@ -161,6 +161,16 @@ namespace Insight.Database.Providers.PostgreSQL
                     p.Value = JsonObjectSerializer.Serializer.SerializeObject(value.GetType(), value);
                 }
             }
+        }
+
+        /// <inheritdoc/>
+        public override CommandBehavior FixupCommandBehavior(IDbCommand command, CommandBehavior commandBehavior)
+        {
+            // Issue #380 - if there are any output parameters, then we can't use sequential access
+            if (command.Parameters.OfType<NpgsqlParameter>().Any(p => p.Direction.HasFlag(ParameterDirection.Output)))
+                commandBehavior &= ~CommandBehavior.SequentialAccess;
+
+            return commandBehavior;
         }
 
         /// <summary>

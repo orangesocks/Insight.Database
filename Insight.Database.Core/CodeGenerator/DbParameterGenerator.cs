@@ -257,10 +257,14 @@ namespace Insight.Database.CodeGenerator
 
 				// look up the best type to use for the parameter
 				DbType sqlType = LookupDbType(memberType, serializer, dbParameter.DbType);
+
 				// give the provider an opportunity to fix up the template parameter (e.g. set UDT type names)
 				provider.FixupParameter(command, dbParameter, sqlType, memberType, mapping.Member.SerializationMode);
+
 				// give a chance to override the best guess parameter
-				DbType overriddenSqlType = ColumnMapping.MapParameterDataType(memberType, command, dbParameter, sqlType);
+				DbType overriddenSqlType = sqlType;
+				if (sqlType != DbTypeEnumerable)
+					overriddenSqlType = ColumnMapping.MapParameterDataType(memberType, command, dbParameter, sqlType);
 
 				///////////////////////////////////////////////////////////////
 				// We have a parameter, start handling all of the other types
@@ -302,7 +306,8 @@ namespace Insight.Database.CodeGenerator
 				}
 
 				// if it's class type, boxed value type (in an object), or nullable, then we have to check for null
-				if (!memberType.GetTypeInfo().IsValueType || Nullable.GetUnderlyingType(memberType) != null)
+				var nullableUnderlyingType = Nullable.GetUnderlyingType(memberType);
+				if (!memberType.GetTypeInfo().IsValueType || nullableUnderlyingType != null)
 				{
 					Label notNull = il.DefineLabel();
 
@@ -320,6 +325,35 @@ namespace Insight.Database.CodeGenerator
 					// we know the value is not null
 					il.MarkLabel(notNull);
                 }
+
+				// some providers (notably npgsql > 4.0) don't convert enums to ints, so we do it for them
+				if ((memberType != null && memberType.GetTypeInfo() != null && memberType.GetTypeInfo().IsEnum) ||
+					(nullableUnderlyingType != null && nullableUnderlyingType.GetTypeInfo() != null && nullableUnderlyingType.GetTypeInfo().IsEnum))
+				{
+					var enumType = nullableUnderlyingType ?? memberType;
+
+					// ClassPropInfo.EmitGetValue has the enum boxed, so unbox, cast, and re-box
+					switch (dbParameter.DbType)
+					{
+						case DbType.Int16:
+							il.Emit(OpCodes.Unbox_Any, enumType);
+							il.Emit(OpCodes.Conv_I2);
+							il.Emit(OpCodes.Box, typeof(Int16));
+							break;
+
+						case DbType.Int32:
+							il.Emit(OpCodes.Unbox_Any, enumType);
+							il.Emit(OpCodes.Conv_I4);
+							il.Emit(OpCodes.Box, typeof(Int32));
+							break;
+
+						case DbType.Int64:
+							il.Emit(OpCodes.Unbox_Any, enumType);
+							il.Emit(OpCodes.Conv_I8);
+							il.Emit(OpCodes.Box, typeof(Int64));
+							break;
+					}
+				}
 
 				///////////////////////////////////////////////////////////////
 				// if this is a linq binary, convert it to a byte array
@@ -714,6 +748,12 @@ namespace Insight.Database.CodeGenerator
 							length = -1;
 						listParam.Size = length;
 					}
+
+					listParam.DbType = ColumnMapping.MapParameterDataType(
+						isString ? typeof(string) : (item?.GetType() ?? typeof(object)),
+						command,
+						parameter,
+						listParam.DbType);
 
 					command.Parameters.Add(listParam);
 				}

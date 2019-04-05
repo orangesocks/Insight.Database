@@ -23,7 +23,7 @@
 
 // This file has been adapted from its original at https://raw.githubusercontent.com/npgsql/npgsql/dev/src/Npgsql/NpgsqlCommandBuilder.cs
 
-#if NETSTANDARD1_5 || NETSTANDARD2_0
+#if NETSTANDARD1_5
 
 using System;
 using System.Collections.Generic;
@@ -127,7 +127,7 @@ GROUP BY pg_proc.proargnames, pg_proc.proargtypes, pg_proc.proallargtypes, pg_pr
 			{ 1562, NpgsqlDbType.Varbit },
 			{ 1700, NpgsqlDbType.Numeric },
 			{ 1790, NpgsqlDbType.Refcursor },
-			{ 2590, NpgsqlDbType.Uuid },
+			{ 2950, NpgsqlDbType.Uuid },
 			{ 3614, NpgsqlDbType.TsVector },
 			{ 3615, NpgsqlDbType.TsQuery },
 			{ 3802, NpgsqlDbType.Jsonb }
