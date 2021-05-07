@@ -6,7 +6,7 @@
 # 2. build package
 #########################################
 
-exec { & $env:VS150COMNTOOLS\vsmsbuildcmd.bat }
+#exec { & $env:VS150COMNTOOLS\vsmsbuildcmd.bat }
 
 properties {
     $baseDir = $psake.build_script_dir
@@ -52,7 +52,7 @@ Task TestOnly {
 }
 
 Task TestQuick {
-    Get-ChildItem Insight.Tests\Insight.Tests.csproj | % { exec { dotnet test $_ -c $configuration -f netcoreapp2.0 } }
+    Get-ChildItem Insight.Tests\Insight.Tests.csproj | % { exec { dotnet test $_ -c $configuration -f netcoreapp3.0 } }
 }
 
 Task PackageOnly {

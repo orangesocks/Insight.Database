@@ -119,6 +119,20 @@ namespace Insight.Database
         }
 
         /// <summary>
+        /// Opens a database connection and begins a new transaction with the specified isolation level that is disposed when the returned object is disposed.
+        /// </summary>
+        /// <param name="connection">The connection to open.</param>
+        /// <param name="isolationLevel">Specifies the isolation level for the transaction.</param>
+        /// <returns>A wrapper for the database connection.</returns>
+        public static DbConnectionWrapper OpenWithTransaction(this IDbConnection connection, IsolationLevel isolationLevel)
+        {
+            // if the connection isn't wrapped, we need to wrap it
+            DbConnectionWrapper wrapper = DbConnectionWrapper.Wrap(connection);
+            wrapper.Open();
+            return wrapper.BeginAutoTransaction(isolationLevel);
+        }
+
+        /// <summary>
         /// Opens a database connection implementing a given interface and begins a new transaction that is disposed when the returned object is disposed.
         /// </summary>
         /// <typeparam name="T">The interface to implement.</typeparam>
@@ -134,6 +148,22 @@ namespace Insight.Database
         }
 
         /// <summary>
+        /// Opens a database connection implementing a given interface and begins a new transaction with the specified isolation level that is disposed when the returned object is disposed.
+        /// </summary>
+        /// <typeparam name="T">The interface to implement.</typeparam>
+        /// <param name="connection">The connection to open.</param>
+        /// <param name="isolationLevel">Specifies the isolation level for the transaction.</param>
+        /// <returns>A wrapper for the database connection.</returns>
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "The connection is returned")]
+        public static T OpenWithTransactionAs<T>(this T connection, IsolationLevel isolationLevel) where T : class, IDbConnection, IDbTransaction
+        {
+            // connection is already a T, so pass it in unwrapped
+            // a connection won't leak from this code because the connection is already a T and should come back as a T
+            // and there is no code between the construction and the return other than the cast
+            return (T)(object)((IDbConnection)connection).OpenWithTransaction(isolationLevel);
+        }
+
+        /// <summary>
         /// Opens a database connection implementing a given interface and begins a new transaction that is disposed when the returned object is disposed.
         /// </summary>
         /// <typeparam name="T">The interface to implement.</typeparam>
@@ -143,6 +173,19 @@ namespace Insight.Database
         {
             // convert to interface first, then open, so we only get one layer of wrapping
             return connection.As<T>().OpenWithTransactionAs();
+        }
+
+        /// <summary>
+        /// Opens a database connection implementing a given interface and begins a new transaction with the specified isolation level that is disposed when the returned object is disposed.
+        /// </summary>
+        /// <typeparam name="T">The interface to implement.</typeparam>
+        /// <param name="connection">The connection to open.</param>
+        /// <param name="isolationLevel">Specifies the isolation level for the transaction.</param>
+        /// <returns>A wrapper for the database connection.</returns>
+        public static T OpenWithTransactionAs<T>(this IDbConnection connection, IsolationLevel isolationLevel) where T : class, IDbConnection, IDbTransaction
+        {
+            // convert to interface first, then open, so we only get one layer of wrapping
+            return connection.As<T>().OpenWithTransactionAs(isolationLevel);
         }
 
         /// <summary>
@@ -163,7 +206,29 @@ namespace Insight.Database
             catch
             {
                 wrapper.Dispose();
+                throw;
+            }
+        }
 
+        /// <summary>
+        /// Asynchronously opens a database connection implementing a given interface, and begins a new transaction with the specified isolation level that is disposed when the returned object is disposed.
+        /// </summary>
+        /// <param name="connection">The connection to open.</param>
+        /// <param name="isolationLevel">Specifies the isolation level for the transaction.</param>
+        /// <param name="cancellationToken">The cancellation token to use for the operation.</param>
+        /// <returns>A task returning a connection when the connection has been opened.</returns>
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "The connection is returned")]
+        public static async Task<DbConnectionWrapper> OpenWithTransactionAsync(this IDbConnection connection, IsolationLevel isolationLevel, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var wrapper = await DbConnectionWrapper.Wrap(connection).OpenConnectionAsync(cancellationToken);
+            try
+            {
+                wrapper.BeginAutoTransaction(isolationLevel);
+                return wrapper;
+            }
+            catch
+            {
+                wrapper.Dispose();
                 throw;
             }
         }
@@ -201,22 +266,60 @@ namespace Insight.Database
         public static Task<T> OpenWithTransactionAsAsync<T>(this IDbConnection connection, CancellationToken cancellationToken = default(CancellationToken)) where T : class, IDbConnection, IDbTransaction
         {
             // convert to interface first, then open, so we only get one layer of wrapping
-            return connection.As<T>().OpenWithTransactionAsAsync(cancellationToken);
+            return connection.As<T>().OpenWithTransactionAsAsync<T>(cancellationToken);
+        }
+
+        /// <summary>
+        /// Asynchronously opens a database connection implementing a given interface, and begins a new transaction that is disposed when the returned object is disposed.
+        /// </summary>
+        /// <typeparam name="T">The interface to implement.</typeparam>
+        /// <param name="connection">The connection to open.</param>
+        /// <param name="isolationLevel">Specifies the isolation level for the transaction.</param>
+        /// <param name="cancellationToken">The cancellation token to use for the operation.</param>
+        /// <returns>A task returning a connection when the connection has been opened.</returns>
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "The connection is returned")]
+        public static async Task<T> OpenWithTransactionAsAsync<T>(this T connection, IsolationLevel isolationLevel, CancellationToken cancellationToken = default(CancellationToken)) where T : class, IDbConnection, IDbTransaction
+        {
+            var open = await OpenWithTransactionAsync((IDbConnection)connection, isolationLevel, cancellationToken);
+
+            try
+            {
+                return open.As<T>();
+            }
+            catch
+            {
+                open.Dispose();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously opens a database connection implementing a given interface, and begins a new transaction with the specified isolation level that is disposed when the returned object is disposed.
+        /// </summary>
+        /// <typeparam name="T">The interface to implement.</typeparam>
+        /// <param name="connection">The connection to open.</param>
+        /// <param name="isolationLevel">Specifies the isolation level for the transaction.</param>
+        /// <param name="cancellationToken">The cancellation token to use for the operation.</param>
+        /// <returns>A task returning a connection when the connection has been opened.</returns>
+        public static Task<T> OpenWithTransactionAsAsync<T>(this IDbConnection connection, IsolationLevel isolationLevel, CancellationToken cancellationToken = default(CancellationToken)) where T : class, IDbConnection, IDbTransaction
+        {
+            // convert to interface first, then open, so we only get one layer of wrapping
+            return connection.As<T>().OpenWithTransactionAsAsync<T>(isolationLevel, cancellationToken);
         }
 
         /// <summary>
         /// Wraps the connection with an existing open database transaction.
-		/// Note that the caller is responsible for the lifetime of the transaction.
+        /// Note that the caller is responsible for the lifetime of the transaction.
         /// </summary>
         /// <param name="connection">The connection to wrap.</param>
         /// <param name="transaction">The transaction to bind to the wrapper.</param>
         /// <returns>A wrapped connection that is enlisted in the transaction.</returns>
-		public static DbConnectionWrapper UsingTransaction(this IDbConnection connection, IDbTransaction transaction)
-		{
+        public static DbConnectionWrapper UsingTransaction(this IDbConnection connection, IDbTransaction transaction)
+        {
             // if the connection isn't wrapped, we need to wrap it
             DbConnectionWrapper wrapper = DbConnectionWrapper.Wrap(connection);
             return wrapper.UsingTransaction(transaction);
-		}
+        }
         #endregion
 
         #region Create Command Members
@@ -1392,10 +1495,10 @@ namespace Insight.Database
 
                 // if the command is not null, then automatically generate the reader
                 if (command != null)
-				{
-					commandBehavior = InsightDbProvider.For(connection).FixupCommandBehavior(command, commandBehavior | CommandBehavior.SequentialAccess);
+                {
+                    commandBehavior = InsightDbProvider.For(connection).FixupCommandBehavior(command, commandBehavior | CommandBehavior.SequentialAccess);
                     reader = command.ExecuteReader(commandBehavior);
-				}
+                }
 
                 return translate(command, reader);
             }

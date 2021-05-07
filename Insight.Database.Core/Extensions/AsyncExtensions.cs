@@ -127,7 +127,7 @@ namespace Insight.Database
                     DbCommand dbCommand = cmd as DbCommand;
                     if (dbCommand != null)
                     {
-                        var scalar = await dbCommand.ExecuteScalarAsync(cancellationToken);
+                        var scalar = await dbCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                         return ConvertScalar<T>(cmd, parameters, outputParameters, scalar);
                     }
                     else
@@ -164,6 +164,69 @@ namespace Insight.Database
             object outputParameters = null)
         {
             return connection.ExecuteScalarAsync<T>(sql, parameters, CommandType.Text, closeConnection, commandTimeout, transaction, cancellationToken, outputParameters);
+        }
+        #endregion
+
+        #region GetReader Methods
+        /// <summary>
+        /// Create a command and execute it. This method does not support auto-open.
+        /// </summary>
+        /// <param name="connection">The connection to use.</param>
+        /// <param name="sql">The sql to execute.</param>
+        /// <param name="parameters">The parameter to pass.</param>
+        /// <param name="commandType">The type of the command.</param>
+        /// <param name="commandBehavior">The behavior of the command when executed.</param>
+        /// <param name="commandTimeout">The timeout of the command.</param>
+        /// <param name="transaction">The transaction to participate in it.</param>
+        /// <param name="cancellationToken">The CancellationToken to use for the operation or null to not use cancellation.</param>
+        /// <returns>A data reader with the results.</returns>
+        public static async Task<DbDataReader> GetReaderAsync(
+            this IDbConnection connection,
+            string sql,
+            object parameters = null,
+            CommandType commandType = CommandType.StoredProcedure,
+            CommandBehavior commandBehavior = CommandBehavior.Default,
+            int? commandTimeout = null,
+            IDbTransaction transaction = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            // DbCommand now supports async execute
+            using (var cmd = connection.CreateCommand(sql, parameters, commandType, commandTimeout, transaction))
+            {
+                DbCommand dbCommand = cmd as DbCommand;
+                if (dbCommand != null)
+                {
+                    return await dbCommand.ExecuteReaderAsync(commandBehavior, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    return (DbDataReader)cmd.ExecuteReader(commandBehavior);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Create a Sql Text command and execute it. This method does not support auto-open.
+        /// </summary>
+        /// <remarks>This is equivalent to calling Query with commandType = CommandType.Text.</remarks>
+        /// <param name="connection">The connection to use.</param>
+        /// <param name="sql">The sql to execute.</param>
+        /// <param name="parameters">The parameter to pass.</param>
+        /// <param name="commandBehavior">The behavior of the command when executed.</param>
+        /// <param name="commandTimeout">The timeout of the command.</param>
+        /// <param name="transaction">The transaction to participate in it.</param>
+        /// <param name="cancellationToken">The CancellationToken to use for the operation or null to not use cancellation.</param>
+        /// <returns>A data reader with the results.</returns>
+        public static Task<DbDataReader> GetReaderSqlAsync(
+            this IDbConnection connection,
+            string sql,
+            object parameters = null,
+            CommandBehavior commandBehavior = CommandBehavior.Default,
+            int? commandTimeout = null,
+            IDbTransaction transaction = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return connection.GetReaderAsync(sql, parameters, CommandType.Text, commandBehavior, commandTimeout, transaction);
         }
         #endregion
 
@@ -1046,23 +1109,23 @@ namespace Insight.Database
         /// <returns>A task that returns the list of objects.</returns>
         internal static async Task<IList<T>> ToListAsync<T>(this IDataReader reader, IRecordReader<T> recordReader, CancellationToken cancellationToken, bool firstRecordOnly)
         {
-			var asyncReader = reader.AsEnumerableAsync(recordReader, cancellationToken);
+            var asyncReader = reader.AsEnumerableAsync(recordReader, cancellationToken);
 
             IList<T> list = new List<T>();
 
-			while (await asyncReader.MoveNextAsync().ConfigureAwait(false))
-			{
-				list.Add(asyncReader.Current);
+            while (await asyncReader.MoveNextAsync().ConfigureAwait(false))
+            {
+                list.Add(asyncReader.Current);
 
-				// if we only want the first record in the set, then skip the rest of this recordset
-				if (firstRecordOnly)
-				{
-					await asyncReader.NextResultAsync().ConfigureAwait(false);
-					break;
-				}
-			}
+                // if we only want the first record in the set, then skip the rest of this recordset
+                if (firstRecordOnly)
+                {
+                    await asyncReader.NextResultAsync().ConfigureAwait(false);
+                    break;
+                }
+            }
 
-			return list;
+            return list;
         }
 
         /// <summary>
@@ -1133,10 +1196,10 @@ namespace Insight.Database
 
                 // if we have a command, execute it
                 if (command != null && callGetReader)
-				{
-					commandBehavior = InsightDbProvider.For(connection).FixupCommandBehavior(command, commandBehavior | CommandBehavior.SequentialAccess);
+                {
+                    commandBehavior = InsightDbProvider.For(connection).FixupCommandBehavior(command, commandBehavior | CommandBehavior.SequentialAccess);
                     reader = await command.GetReaderAsync(commandBehavior, cancellationToken);
-				}
+                }
 
                 T result = await translate(command, reader);
 
@@ -1231,90 +1294,90 @@ namespace Insight.Database
         }
         #endregion
 
-		#region AsEnumerable Methods
-		/// <summary>
+        #region AsEnumerable Methods
+        /// <summary>
         /// Returns an enumerator that can read records from the stream asynchronously.
         /// </summary>
-		/// <typeparam name="T">The type of object to return from the reader.</typeparam>
+        /// <typeparam name="T">The type of object to return from the reader.</typeparam>
         /// <param name="reader">The data reader to read from.</param>
         /// <param name="recordReader">The record reader to use to translate the records.</param>
         /// <param name="cancellationToken">The cancellationToken to use for the operation.</param>
         /// <returns>An asynchrnous enumerator.</returns>
-		public static IAsyncEnumerable<T> AsEnumerableAsync<T>(this IDataReader reader, IRecordReader<T> recordReader, CancellationToken cancellationToken = default(CancellationToken))
-		{
-			return new AsyncReader<T>(reader, recordReader, cancellationToken);
-		}
+        public static IAsyncEnumerable<T> AsEnumerableAsync<T>(this IDataReader reader, IRecordReader<T> recordReader, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return new AsyncReader<T>(reader, recordReader, cancellationToken);
+        }
 
-		class AsyncReader<T> : IAsyncEnumerable<T>
-		{
-			private bool _completed = false;
-			private IDataReader _reader;
-			private DbDataReader _dbReader;
-			private IRecordReader<T> _recordReader;
-			private Func<IDataReader, T> _mapper;
-			private CancellationToken _cancellationToken;
+        class AsyncReader<T> : IAsyncEnumerable<T>
+        {
+            private bool _completed = false;
+            private IDataReader _reader;
+            private DbDataReader _dbReader;
+            private IRecordReader<T> _recordReader;
+            private Func<IDataReader, T> _mapper;
+            private CancellationToken _cancellationToken;
 
-			public AsyncReader(IDataReader reader, IRecordReader<T> recordReader, CancellationToken ct)
-			{
-				_reader = reader;
-				_dbReader = reader as DbDataReader;
-				_recordReader = recordReader;
-				_cancellationToken = ct;
-			}
+            public AsyncReader(IDataReader reader, IRecordReader<T> recordReader, CancellationToken ct)
+            {
+                _reader = reader;
+                _dbReader = reader as DbDataReader;
+                _recordReader = recordReader;
+                _cancellationToken = ct;
+            }
 
-			public T Current { get; private set; }
+            public T Current { get; private set; }
 
-			public async Task<bool> MoveNextAsync()
-			{
-				if (_completed || _reader.IsClosed)
-					return false;
+            public async Task<bool> MoveNextAsync()
+            {
+                if (_completed || _reader.IsClosed)
+                    return false;
 
-				if (!await ReadNextAsync().ConfigureAwait(false))
-				{
-					if (!await NextResultAsync().ConfigureAwait(false))
-						_reader.Dispose();
+                if (!await ReadNextAsync().ConfigureAwait(false))
+                {
+                    if (!await NextResultAsync().ConfigureAwait(false))
+                        _reader.Dispose();
 
-					_completed = true;
-					Current = default(T);
+                    _completed = true;
+                    Current = default(T);
 
-					return false;
-				}
+                    return false;
+                }
 
-				if (_mapper == null)
-				{
-					_cancellationToken.ThrowIfCancellationRequested();
-					_mapper = _recordReader.GetRecordReader(_reader);
-				}
+                if (_mapper == null)
+                {
+                    _cancellationToken.ThrowIfCancellationRequested();
+                    _mapper = _recordReader.GetRecordReader(_reader);
+                }
 
-				Current = _mapper(_reader);
+                Current = _mapper(_reader);
 
-				return true;
-			}
+                return true;
+            }
 
-			public Task<bool> NextResultAsync()
-			{
-				if (_dbReader != null)
-					return _dbReader.NextResultAsync(_cancellationToken);
-				else
-					return Task.FromResult(_reader.NextResult());
-			}
+            public Task<bool> NextResultAsync()
+            {
+                if (_dbReader != null)
+                    return _dbReader.NextResultAsync(_cancellationToken);
+                else
+                    return Task.FromResult(_reader.NextResult());
+            }
 
-			public void Dispose()
-			{
-				if (_dbReader != null)
-					_dbReader.Dispose();
-				else if (_reader != null)
-					_reader.Dispose();
-			}
+            public void Dispose()
+            {
+                if (_dbReader != null)
+                    _dbReader.Dispose();
+                else if (_reader != null)
+                    _reader.Dispose();
+            }
 
-			private Task<bool> ReadNextAsync()
-			{
-				if (_dbReader != null)
-					return _dbReader.ReadAsync(_cancellationToken);
-				else
-					return Task.FromResult(_reader.Read());
-			}
-		}
-		#endregion
+            private Task<bool> ReadNextAsync()
+            {
+                if (_dbReader != null)
+                    return _dbReader.ReadAsync(_cancellationToken);
+                else
+                    return Task.FromResult(_reader.Read());
+            }
+        }
+        #endregion
     }
 }
